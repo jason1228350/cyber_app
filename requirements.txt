@@ -2,3 +2,4 @@ streamlit
 pillow
 transformers
 torch
+torchvision
