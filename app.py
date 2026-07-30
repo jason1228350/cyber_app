@@ -57,24 +57,23 @@ def analyze_anti_forensics(image):
     
     return lsb_image, laplacian_var, is_smoothed
 
-# 超完整 EXIF 標籤中文對照表
+# 全面性 EXIF 中文翻譯表
 EXIF_ZH_MAP = {
     "Make": "拍攝裝置品牌",
     "Model": "拍攝裝置型號",
     "DateTime": "檔案修改時間",
     "DateTimeOriginal": "照片原始拍攝時間",
     "DateTimeDigitized": "照片數位化時間",
-    "Software": "影像處理軟體 / 來源系統",
+    "Software": "處理軟體 / 來源系統",
     "UserComment": "系統註記 / 備註資訊",
     "ImageDescription": "照片描述說明",
     "Orientation": "照片旋轉方向",
     "XResolution": "水平解析度 (DPI)",
     "YResolution": "垂直解析度 (DPI)",
     "ResolutionUnit": "解析度單位",
-    "ExifOffset": "元資料索引區塊",
     "ColorSpace": "色彩空間格式",
-    "ExifImageWidth": "照片記錄寬度 (像素)",
-    "ExifImageHeight": "照片記錄高度 (像素)",
+    "ExifImageWidth": "照片寬度 (像素)",
+    "ExifImageHeight": "照片高度 (像素)",
     "CompressedBitsPerPixel": "壓縮位元率",
     "PixelXDimension": "實際輸出寬度 (像素)",
     "PixelYDimension": "實際輸出高度 (像素)",
@@ -85,6 +84,9 @@ EXIF_ZH_MAP = {
     "Flash": "閃光燈狀態",
     "FocalLength": "鏡頭焦距"
 }
+
+# 系統底層冷門標籤過濾清單（這些無關鑑識且容易造成英文亂碼）
+IGNORE_TAGS = ["ExifOffset", "MakerNote", "UserComment", "GPSInfo"]
 
 # 檔案上傳 UI
 uploaded_file = st.file_uploader("📂 請選擇要測試的照片", type=["jpg", "jpeg", "png", "webp"])
@@ -146,7 +148,7 @@ if uploaded_file is not None:
             else:
                 st.info("✅ 雜訊分布正常，未發現明顯反偵查抹除痕跡。")
 
-    # ------------------ 第四防線 (全中文化 EXIF) ------------------
+    # ------------------ 第四防線 (純中文過濾 EXIF) ------------------
     st.markdown("---")
     st.subheader("📜 第四防線：照片相機與數位紀錄稽核 (EXIF)")
     
@@ -155,12 +157,18 @@ if uploaded_file is not None:
     if info:
         for tag_id, value in info.items():
             tag_name = ExifTags.TAGS.get(tag_id, str(tag_id))
-            zh_name = EXIF_ZH_MAP.get(tag_name, tag_name)
+            
+            # 過濾掉底層雜訊與冷門偏移量標籤
+            if tag_name in IGNORE_TAGS or str(tag_id) in IGNORE_TAGS:
+                continue
+                
+            # 轉換為中文標籤，沒對照到的英文字自動加上註解白話化
+            zh_name = EXIF_ZH_MAP.get(tag_name, f"照片系統參數 ({tag_name})")
             
             # 數值轉為白話中文
             val_str = str(value)
             if tag_name == "ColorSpace":
-                val_str = "sRGB 標準色彩空間" if str(value) == "1" else "未定義/非標準色彩空間"
+                val_str = "sRGB 標準色彩空間" if str(value) == "1" else "標準色彩格式"
             elif "Screenshot" in val_str:
                 val_str = "螢幕截圖照片 (Screenshot)"
             elif tag_name in ["ExifImageWidth", "PixelXDimension"]:
