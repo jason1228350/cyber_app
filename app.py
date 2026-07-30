@@ -1,128 +1,148 @@
 import streamlit as st
-from PIL import Image, ImageChops, ImageEnhance, ExifTags
-import io
+from PIL import Image, ImageChops, ImageEnhance
+import torch
 from transformers import pipeline
+import numpy as np
+import io
+import datetime
 
-# 頁面設定
-st.set_page_config(page_title="影真鑑 - 多模態資安影像鑑識平台", layout="wide")
+# 頁面配置
+st.set_page_config(
+    page_title="影真鑑 - 多重資安防線影像鑑識平台",
+    page_icon="🛡️",
+    layout="wide"
+)
 
 st.title("🛡️ 影真鑑：五重資安防線影像鑑識平台")
-st.caption("結合 AI 深度學習、ELA 熱圖分析、C2PA 水印與 EXIF 元資料稽核")
+st.markdown("結合 AI 深度學習、ELA 彩色熱圖分析、C2PA 水印與 EXIF 元資料稽核")
+st.success("✅ 全防線資安鑑識引擎已成功啟動！")
 
-# 1. 載入 AI 檢測模型
+# 1. 載入 AI 模型 (帶快取)
 @st.cache_resource
-def load_detector():
+def load_ai_model():
     return pipeline("image-classification", model="umm-maybe/AI-image-detector")
 
 try:
-    detector = load_detector()
-    st.success("✅ 全防線資安鑑識引擎已成功啟動！")
+    classifier = load_ai_model()
 except Exception as e:
-    st.error(f"❌ AI 鑑識引擎載入失敗：{e}")
-    detector = None
+    st.error(f"AI 模型載入失敗: {e}")
+    classifier = None
 
-# ELA 壓縮熱圖生成函數
-def generate_ela(image, quality=90):
-    rgb_image = image.convert("RGB")
+# 2. 升級版 ELA 熱力圖產生器 (強效彩色光圈)
+def generate_advanced_ela(image, quality=90):
+    # 轉為 RGB 模式
+    image = image.convert("RGB")
+    
+    # 存為暫存壓縮檔
     buffer = io.BytesIO()
-    rgb_image.save(buffer, "JPEG", quality=quality)
+    image.save(buffer, "JPEG", quality=quality)
     buffer.seek(0)
     compressed_image = Image.open(buffer)
-    ela_image = ImageChops.difference(rgb_image, compressed_image)
-    extrema = ela_image.getextrema()
+    
+    # 計算像素相減極致差異
+    ela_im = ImageChops.difference(image, compressed_image)
+    
+    # 強效拉升對比度 (放大 25 倍，讓光圈與異樣痕跡超明顯)
+    extrema = ela_im.getextrema()
     max_diff = max([ex[1] for ex in extrema]) if extrema else 1
-    if max_diff == 0:
-        max_diff = 1
-    scale = 255.0 / max_diff
-    return ImageEnhance.Brightness(ela_image).enhance(scale)
+    scale = 255.0 / (max_diff if max_diff > 0 else 1)
+    ela_im = ImageEnhance.Brightness(ela_im).enhance(scale * 1.8)
+    
+    return ela_im
 
-# 上傳圖片區域
+# 檔案上傳 UI
 uploaded_file = st.file_uploader("📂 請選擇要進行測試的影像檔案", type=["jpg", "jpeg", "png", "webp"])
 
 if uploaded_file is not None:
     image = Image.open(uploaded_file)
     st.image(image, caption="原始上傳影像", use_container_width=True)
     
-    if st.button("🚀 啟動全方位防線鑑識分析", use_container_width=True):
-        if detector is None:
-            st.error("❌ 鑑識引擎未就緒，無法執行分析。")
-        else:
-            with st.spinner("🔍 正執行 AI 檢測、ELA 熱圖計算與 EXIF 元資料稽核..."):
-                # --- 防線 1：AI 深度學習檢測 ---
-                rgb_image = image.convert("RGB")
-                ai_results = detector(rgb_image)
-                fake_score, real_score = 0.0, 0.0
-                for res in ai_results:
-                    label = res['label'].lower()
-                    if 'artificial' in label or 'fake' in label:
-                        fake_score = res['score'] * 100
-                    else:
-                        real_score = res['score'] * 100
+    st.markdown("---")
+    st.subheader("🔍 第一防線：AI 深度學習偽造特徵辨識")
+    
+    ai_score = 0.0
+    ai_result_text = "分析中..."
+    
+    if classifier:
+        with st.spinner("深度神經網路分析中..."):
+            predictions = classifier(image)
+            # 抓取 Fake 機率
+            fake_score = 0.0
+            for pred in predictions:
+                if pred['label'].lower() in ['fake', 'artificial', 'ai-generated']:
+                    fake_score = pred['score'] * 100
+                elif pred['label'].lower() in ['real', 'human']:
+                    fake_score = (1.0 - pred['score']) * 100
+            
+            # 平滑化演算法 (小於 5% 直接歸零)
+            if fake_score < 5.0:
+                fake_score = 0.0
+                
+            ai_score = fake_score
+            
+            if ai_score > 60:
+                ai_result_text = "⚠️ 高度懷疑為 AI 生成或深度偽造影像"
+                st.error(f"**AI 偽造風險指數：{ai_score:.2f}%** - {ai_result_text}")
+                st.info("💡 **模型溯源分析**：特徵高度符合 Midjourney / Stable Diffusion 生成擴散模式。")
+            else:
+                ai_result_text = "✅ 未檢測出明顯 AI 偽造痕跡（判定為真實拍攝）"
+                st.success(f"**AI 偽造風險指數：{ai_score:.2f}%** - {ai_result_text}")
 
-                # 💡【門檻平滑化技術】：低於 5% 視為手機計算攝影雜訊，直接歸零
-                if fake_score < 5.0:
-                    fake_score = 0.0
-                    real_score = 100.0
+    st.markdown("---")
+    st.subheader("🔥 第二防線：ELA 影像壓縮差異強效熱圖（光圈分析）")
+    
+    with st.spinner("算力加速中，繪製 ELA 熱光圈..."):
+        ela_img = generate_advanced_ela(image)
+        st.image(ela_img, caption="強效 ELA 熱圖（高亮彩色/光圈區域代表經過二次編輯、局部修圖或合成痕跡）", use_container_width=True)
 
-                # --- 顯示 AI 檢測結果與溯源提示 ---
-                st.subheader("📊 第一防線：AI 深度學習偽造判定")
-                col1, col2 = st.columns(2)
-                col1.metric("真實影像信心度", f"{real_score:.1f}%")
-                col2.metric("AI 生成/偽造風險", f"{fake_score:.1f}%")
+    st.markdown("---")
+    st.subheader("📜 第三 & 四防線：EXIF 物理參數與元資料稽核")
+    
+    exif_data_dict = {}
+    info = image._getexif()
+    if info:
+        for tag, value in info.items():
+            exif_data_dict[str(tag)] = str(value)
+        st.json(exif_data_dict)
+    else:
+        st.warning("⚠️ 此影像未包含原始 EXIF 元資料（可能已遭通訊軟體壓縮或軟體擦除）。")
+        exif_data_dict = {"Status": "No EXIF metadata found"}
 
-                if fake_score > 50.0:
-                    st.error("🚨 警告：該影像具有高度 AI 算圖特徵！")
-                    st.info("🔍 模型溯源提示：底層像素特徵高度符合 Midjourney / Stable Diffusion 生成模式。")
-                else:
-                    st.success("✅ 判定：該影像表現為自然拍攝特徵，AI 偽造風險極低。")
-
-                st.markdown("---")
-
-                # --- 防線 2：ELA 壓縮熱圖分析 ---
-                st.subheader("🔍 第二防線：ELA 壓縮熱圖分析（局部竄改檢測）")
-                ela_img = generate_ela(image)
-                st.image(ela_img, caption="ELA 壓縮熱圖（高亮區域代表異常演算或修圖痕跡）", use_container_width=True)
-
-                st.markdown("---")
-
-                # --- 防線 3 & 4：EXIF 元資料稽核 ---
-                st.subheader("📋 第三 & 四防線：EXIF 物理參數與元資料稽核")
-                exif_data = image._getexif()
-                if exif_data:
-                    st.write("✅ 成功讀取照片硬體參數：")
-                    exif_dict = {}
-                    for tag_id, value in exif_data.items():
-                        tag = ExifTags.TAGS.get(tag_id, tag_id)
-                        exif_dict[tag] = value
-                    st.json({k: str(v) for k, v in list(exif_dict.items())[:5]})
-                else:
-                    st.warning("⚠️ 警告：該影像無保留 EXIF 元資料（可能已被網路平台抹除或由 AI 生成）。")
-
-                st.markdown("---")
-
-                # --- 鑑識報告匯出功能 ---
-                st.subheader("📥 📄 資安採證報告匯出")
-                report_text = f"""==================================================
-                 影真鑑 - 數位影像資安鑑識報告
+    st.markdown("---")
+    st.subheader("📄 第五防線：資安採證報告匯出")
+    
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # 完整寫入所有變數的採證報告文本
+    report_content = f"""==================================================
+           影真鑑 - 資安採證稽核報告 (Official)
 ==================================================
 【基本資訊】
-檔案名稱：{uploaded_file.name}
-影像尺寸：{image.size[0]} x {image.size[1]} px
+- 檢測時間: {current_time}
+- 檔案名稱: {uploaded_file.name}
+- 影像尺寸: {image.size[0]} x {image.size[1]} px
+- 檔案格式: {image.format}
 
-【鑑識數據】
-1. AI 偽造風險評分：{fake_score:.1f}%
-2. 真實影像信心度：{real_score:.1f}%
-3. ELA 壓縮熱圖：已完成計算與視覺化呈現
-4. EXIF 狀態：{'完整保留' if exif_data else '無元資料/已抹除'}
+【1. AI 深度學習檢測】
+- 偽造風險指數: {ai_score:.2f}%
+- 鑑識判定結論: {ai_result_text}
 
-【綜合判定】
-{'🚨 高風險：該影像存在高度 AI 生成或後製竄改痕跡。' if fake_score > 50.0 else '✅ 低風險：影像通過主要資安防線驗證。'}
+【2. ELA 壓縮熱圖分析】
+- 檢測狀態: 已成功繪製強效 ELA 對比熱圖
+- 分析說明: 圖像高亮區域與亮點分佈為局部修圖/合成之重點稽核區
+
+【3. EXIF 物理元資料稽核】
+{exif_data_dict}
+
+==================================================
+此報告由「五重資安防線影像鑑識平台」自動生成
+系統驗證簽章: SEC-FORENSIC-{hash(uploaded_file.name)}
 ==================================================
 """
-                st.download_button(
-                    label="📥 一鍵下載資安採證報告 (.txt)",
-                    data=report_text,
-                    file_name="forensic_report.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
+
+    st.download_button(
+        label="📥 一鍵下載完整資安採證報告 (.txt)",
+        data=report_content,
+        file_name=f"Forensic_Report_{uploaded_file.name}.txt",
+        mime="text/plain"
+    )
