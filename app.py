@@ -57,21 +57,33 @@ def analyze_anti_forensics(image):
     
     return lsb_image, laplacian_var, is_smoothed
 
-# EXIF 標籤轉中文 mapping
+# 超完整 EXIF 標籤中文對照表
 EXIF_ZH_MAP = {
-    "Make": "製造商 / 手機品牌",
-    "Model": "裝置型號",
-    "DateTime": "修改時間",
-    "DateTimeOriginal": "原始拍攝/生成時間",
-    "DateTimeDigitized": "數位化時間",
-    "Software": "處理軟體 / 來源系統",
-    "UserComment": "使用者備註 / 系統註記",
-    "ImageDescription": "影像描述 / 來源說明",
-    "Orientation": "旋轉方向",
+    "Make": "拍攝裝置品牌",
+    "Model": "拍攝裝置型號",
+    "DateTime": "檔案修改時間",
+    "DateTimeOriginal": "照片原始拍攝時間",
+    "DateTimeDigitized": "照片數位化時間",
+    "Software": "影像處理軟體 / 來源系統",
+    "UserComment": "系統註記 / 備註資訊",
+    "ImageDescription": "照片描述說明",
+    "Orientation": "照片旋轉方向",
     "XResolution": "水平解析度 (DPI)",
     "YResolution": "垂直解析度 (DPI)",
     "ResolutionUnit": "解析度單位",
-    "ExifOffset": "EXIF 資料偏移量"
+    "ExifOffset": "元資料索引區塊",
+    "ColorSpace": "色彩空間格式",
+    "ExifImageWidth": "照片記錄寬度 (像素)",
+    "ExifImageHeight": "照片記錄高度 (像素)",
+    "CompressedBitsPerPixel": "壓縮位元率",
+    "PixelXDimension": "實際輸出寬度 (像素)",
+    "PixelYDimension": "實際輸出高度 (像素)",
+    "ExposureTime": "快門時間",
+    "FNumber": "光圈值",
+    "ISOSpeedRatings": "ISO 感光度",
+    "MeteringMode": "測光模式",
+    "Flash": "閃光燈狀態",
+    "FocalLength": "鏡頭焦距"
 }
 
 # 檔案上傳 UI
@@ -134,29 +146,34 @@ if uploaded_file is not None:
             else:
                 st.info("✅ 雜訊分布正常，未發現明顯反偵查抹除痕跡。")
 
-    # ------------------ 第四防線 (中文化 EXIF) ------------------
+    # ------------------ 第四防線 (全中文化 EXIF) ------------------
     st.markdown("---")
-    st.subheader("📜 第四防線：EXIF 物理參數與元資料稽核")
+    st.subheader("📜 第四防線：照片相機與數位紀錄稽核 (EXIF)")
     
     exif_data_dict = {}
     info = image._getexif()
     if info:
         for tag_id, value in info.items():
             tag_name = ExifTags.TAGS.get(tag_id, str(tag_id))
-            # 轉換為中文標籤（若沒有中文對照則顯示英文名稱）
             zh_name = EXIF_ZH_MAP.get(tag_name, tag_name)
             
-            # 清理 binary 雜訊字元
+            # 數值轉為白話中文
             val_str = str(value)
-            if "Screenshot" in val_str:
+            if tag_name == "ColorSpace":
+                val_str = "sRGB 標準色彩空間" if str(value) == "1" else "未定義/非標準色彩空間"
+            elif "Screenshot" in val_str:
                 val_str = "螢幕截圖照片 (Screenshot)"
+            elif tag_name in ["ExifImageWidth", "PixelXDimension"]:
+                val_str = f"{value} 像素 (px)"
+            elif tag_name in ["ExifImageHeight", "PixelYDimension"]:
+                val_str = f"{value} 像素 (px)"
                 
             exif_data_dict[zh_name] = val_str
             
         st.json(exif_data_dict)
     else:
         st.warning("⚠️ 此影像未包含原始相機 EXIF 元資料（可能為轉傳照片或已遭抹除）。")
-        exif_data_dict = {"狀態說明": "未偵測到原始 EXIF 拍攝紀錄"}
+        exif_data_dict = {"狀態說明": "未偵測到原始相機拍攝紀錄"}
 
     # ------------------ 第五防線 ------------------
     st.markdown("---")
