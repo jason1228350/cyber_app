@@ -1,5 +1,5 @@
 import streamlit as st
-from PIL import Image, ImageChops, ImageEnhance, ImageFilter
+from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ExifTags
 import torch
 from transformers import pipeline
 import numpy as np
@@ -42,20 +42,37 @@ def generate_ela(image, quality=90):
     ela_im = ImageEnhance.Brightness(ela_im).enhance(scale * 1.8)
     return ela_im
 
-# 反偵查 (Anti-Forensics) 檢測：LSB 隱寫術與雜訊平滑化稽核
+# 反偵查 (Anti-Forensics) 檢測
 def analyze_anti_forensics(image):
     img_gray = image.convert("L")
     img_array = np.array(img_gray)
     
-    # 1. LSB 最低有效位隱寫提取 (Least Significant Bit)
+    # LSB 最低有效位隱寫提取
     lsb_array = (img_array & 1) * 255
     lsb_image = Image.fromarray(lsb_array.astype(np.uint8))
     
-    # 2. 高頻雜訊與平滑化遮蔽檢測 (檢測是否抹除痕跡)
+    # 高頻雜訊與平滑化遮蔽檢測
     laplacian_var = np.var(np.gradient(img_array))
-    is_smoothed = laplacian_var < 100.0  # 過度平滑可能代表抹除痕跡
+    is_smoothed = laplacian_var < 100.0
     
     return lsb_image, laplacian_var, is_smoothed
+
+# EXIF 標籤轉中文 mapping
+EXIF_ZH_MAP = {
+    "Make": "製造商 / 手機品牌",
+    "Model": "裝置型號",
+    "DateTime": "修改時間",
+    "DateTimeOriginal": "原始拍攝/生成時間",
+    "DateTimeDigitized": "數位化時間",
+    "Software": "處理軟體 / 來源系統",
+    "UserComment": "使用者備註 / 系統註記",
+    "ImageDescription": "影像描述 / 來源說明",
+    "Orientation": "旋轉方向",
+    "XResolution": "水平解析度 (DPI)",
+    "YResolution": "垂直解析度 (DPI)",
+    "ResolutionUnit": "解析度單位",
+    "ExifOffset": "EXIF 資料偏移量"
+}
 
 # 檔案上傳 UI
 uploaded_file = st.file_uploader("📂 請選擇要測試的照片", type=["jpg", "jpeg", "png", "webp"])
@@ -100,7 +117,7 @@ if uploaded_file is not None:
         ela_img = generate_ela(image)
         st.image(ela_img, caption="ELA 壓縮熱圖（高亮區域代表異常演算或修圖痕跡）", use_container_width=True)
 
-    # ------------------ 第三防線 (反偵查功能) ------------------
+    # ------------------ 第三防線 ------------------
     st.markdown("---")
     st.subheader("🕵️ 第三防線：反偵查 (Anti-Forensics) 與隱寫稽核")
     
@@ -111,25 +128,35 @@ if uploaded_file is not None:
         with col1:
             st.image(lsb_img, caption="LSB 最低有效位點圖 (若出現規則圖案可能藏有隱寫訊息)", use_container_width=True)
         with col2:
-            st.markdown(f"**高頻雜訊變異度 (Variance):** `{lap_var:.2f}`")
+            st.markdown(f"**高頻雜訊變異度:** `{lap_var:.2f}`")
             if is_smoothed:
                 st.warning("⚠️ 偵測到異常平滑區域，疑有過重降噪或高頻抹除痕跡（試圖掩蓋 P 圖邊緣）。")
             else:
                 st.info("✅ 雜訊分布正常，未發現明顯反偵查抹除痕跡。")
 
-    # ------------------ 第四防線 ------------------
+    # ------------------ 第四防線 (中文化 EXIF) ------------------
     st.markdown("---")
     st.subheader("📜 第四防線：EXIF 物理參數與元資料稽核")
     
     exif_data_dict = {}
     info = image._getexif()
     if info:
-        for tag, value in info.items():
-            exif_data_dict[str(tag)] = str(value)
+        for tag_id, value in info.items():
+            tag_name = ExifTags.TAGS.get(tag_id, str(tag_id))
+            # 轉換為中文標籤（若沒有中文對照則顯示英文名稱）
+            zh_name = EXIF_ZH_MAP.get(tag_name, tag_name)
+            
+            # 清理 binary 雜訊字元
+            val_str = str(value)
+            if "Screenshot" in val_str:
+                val_str = "螢幕截圖照片 (Screenshot)"
+                
+            exif_data_dict[zh_name] = val_str
+            
         st.json(exif_data_dict)
     else:
-        st.warning("⚠️ 此影像未包含原始 EXIF 元資料。")
-        exif_data_dict = {"Status": "No EXIF metadata found"}
+        st.warning("⚠️ 此影像未包含原始相機 EXIF 元資料（可能為轉傳照片或已遭抹除）。")
+        exif_data_dict = {"狀態說明": "未偵測到原始 EXIF 拍攝紀錄"}
 
     # ------------------ 第五防線 ------------------
     st.markdown("---")
@@ -157,7 +184,7 @@ if uploaded_file is not None:
 - 高頻雜訊數值: {lap_var:.2f}
 - 抹除痕跡判定: {"⚠️ 疑似有抹除/降噪掩蓋痕跡" if is_smoothed else "✅ 雜訊分佈正常"}
 
-【4. EXIF 物理元資料稽核】
+【4. 相機與元資料稽核 (EXIF)】
 {exif_data_dict}
 
 ==================================================
@@ -169,6 +196,6 @@ if uploaded_file is not None:
     st.download_button(
         label="📥 一鍵下載資安採證報告 (.txt)",
         data=report_content,
-        file_name=f"forensic_report_{uploaded_file.name}.txt",
+        file_name=f"資安採證報告_{uploaded_file.name}.txt",
         mime="text/plain"
     )
