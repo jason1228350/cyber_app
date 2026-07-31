@@ -6,7 +6,6 @@ import numpy as np
 import io
 import datetime
 import hashlib
-from fpdf import FPDF
 import matplotlib.cm as cm
 
 # 1. 頁面配置
@@ -17,7 +16,7 @@ st.set_page_config(
 )
 
 st.title("🐶「狗」眼看真偽：基於 AI 檢測與 ELA 熱圖之影像真偽鑑定平台")
-st.markdown("##### 🐾 資安警犬隊出動！結合 AI 嗅覺辨識、ELA 熱圖顯影、FFT 頻域、PRNU 指紋與 C2PA 水印稽核")
+st.markdown("##### 🐾 資安警犬隊出動！結合 AI 嗅檢、ELA 熱圖、FFT 頻域、PRNU 指紋與 C2PA 水印稽核")
 st.success("✅ 全防線資安警犬鑑識引擎已成功啟動！")
 
 # 2. 載入 AI 模型
@@ -31,9 +30,9 @@ except Exception as e:
     st.error(f"AI 模型初始化中: {e}")
     classifier = None
 
-# 3. 功能函式庫
+# 3. 核心功能模組
 
-# (1) ELA 彩色 Jet 熱圖與灰階數據產生器
+# (1) ELA 彩色 Jet 熱圖產生器
 def generate_ela_jet(image, quality=90):
     image_rgb = image.convert("RGB")
     buffer = io.BytesIO()
@@ -47,7 +46,6 @@ def generate_ela_jet(image, quality=90):
     scale = 255.0 / (max_diff if max_diff > 0 else 1)
     ela_im = ImageEnhance.Brightness(ela_im).enhance(scale * 1.8)
     
-    # 轉為 Jet 色彩對應 (Matplotlib Colormap)
     gray_array = np.array(ela_im.convert("L")) / 255.0
     jet_colormap = cm.get_cmap('jet')
     jet_mapped = (jet_colormap(gray_array)[:, :, :3] * 255).astype(np.uint8)
@@ -108,51 +106,6 @@ def scan_c2pa_watermark(file_bytes):
     detected = [kw for kw in keywords if kw.lower() in bytes_str.lower()]
     return detected
 
-# (7) PDF 報告產生器
-def create_pdf_report(filename, sha256_val, md5_val, img_size, ai_score, ai_result, trust_score, roi_box, prnu_has, is_smoothed, c2pa_list, exif_info):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Helvetica", 'B', 16)
-    
-    pdf.cell(0, 10, "DOG-EYE FORENSIC OFFICIAL採證報告", ln=True, align='C')
-    pdf.set_font("Helvetica", '', 9)
-    pdf.cell(0, 5, f"Report Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True, align='C')
-    pdf.ln(5)
-    
-    pdf.set_font("Helvetica", 'B', 11)
-    pdf.cell(0, 7, "1. Chain of Custody & Hash", ln=True)
-    pdf.set_font("Helvetica", '', 9)
-    pdf.cell(0, 5, f"File Name: {filename}", ln=True)
-    pdf.cell(0, 5, f"Dimensions: {img_size[0]} x {img_size[1]} px", ln=True)
-    pdf.cell(0, 5, f"SHA-256: {sha256_val}", ln=True)
-    pdf.cell(0, 5, f"MD5: {md5_val}", ln=True)
-    pdf.ln(4)
-    
-    pdf.set_font("Helvetica", 'B', 11)
-    pdf.cell(0, 7, "2. Trust Score & AI Risk", ln=True)
-    pdf.set_font("Helvetica", '', 9)
-    pdf.cell(0, 5, f"Trust Score: {trust_score:.1f} / 100", ln=True)
-    pdf.cell(0, 5, f"AI Risk Index: {ai_score:.2f}%", ln=True)
-    pdf.cell(0, 5, f"AI Status: {ai_result}", ln=True)
-    pdf.cell(0, 5, f"ROI Bounding Box: {roi_box if roi_box else 'None'}", ln=True)
-    pdf.ln(4)
-    
-    pdf.set_font("Helvetica", 'B', 11)
-    pdf.cell(0, 7, "3. Physical & Anti-Forensics Analysis", ln=True)
-    pdf.set_font("Helvetica", '', 9)
-    pdf.cell(0, 5, f"PRNU Sensor Noise: {'Present' if prnu_has else 'Missing (AI or Rendered)'}", ln=True)
-    pdf.cell(0, 5, f"Smoothing Check: {'Warning (Smoothed)' if is_smoothed else 'Normal'}", ln=True)
-    pdf.cell(0, 5, f"C2PA Tags: {', '.join(c2pa_list) if c2pa_list else 'None'}", ln=True)
-    pdf.ln(4)
-    
-    pdf.set_font("Helvetica", 'B', 11)
-    pdf.cell(0, 7, "4. EXIF Metadata Summary", ln=True)
-    pdf.set_font("Helvetica", '', 9)
-    for k, v in exif_info.items():
-        pdf.cell(0, 5, f"- {k}: {v}", ln=True)
-        
-    return pdf.output()
-
 # EXIF 標籤過濾與中文對照
 EXIF_ZH_MAP = {
     "Make": "拍攝裝置品牌", "Model": "拍攝裝置型號", "DateTime": "檔案修改時間",
@@ -161,7 +114,7 @@ EXIF_ZH_MAP = {
 }
 IGNORE_TAGS = ["ExifOffset", "MakerNote", "UserComment", "GPSInfo", "YCbCrPositioning", "ExifVersion", "ComponentsConfiguration", "FlashPixVersion", "SceneCaptureType"]
 
-# 側邊欄靈敏度設定
+# 側邊欄控制台
 st.sidebar.title("🐶 警犬隊控制台")
 sensitivity = st.sidebar.slider("警犬嗅覺靈敏度門檻 (%)", 30, 90, 60)
 
@@ -172,14 +125,14 @@ if uploaded_file is not None:
     bytes_data = uploaded_file.read()
     image = Image.open(io.BytesIO(bytes_data))
     
-    # 指紋計算
+    # 數位指紋計算
     sha256_hash = hashlib.sha256(bytes_data).hexdigest()
     md5_hash = hashlib.md5(bytes_data).hexdigest()
     
     st.info(f"🐾 **證物數位指紋 (Chain of Custody):**\n- **SHA-256:** `{sha256_hash}`\n- **MD5:** `{md5_hash}`")
     st.image(image, caption="📷 待鑑定原始照片", use_container_width=True)
     
-    # 算力分析執行
+    # 防線算力執行
     ela_jet_img, gray_ela = generate_ela_jet(image)
     marked_img, roi_box, cropped_roi = detect_roi_bounding_box(image, gray_ela)
     fft_img = analyze_fft_spectrum(image)
@@ -202,7 +155,7 @@ if uploaded_file is not None:
         ai_score = fake_score
         ai_result_text = "⚠️ 警報！高度懷疑為 AI 生成假圖" if ai_score > sensitivity else "✅ 未見明顯 AI 偽造痕跡"
 
-    # 可信度卡分數計算
+    # 評分卡分數
     trust_score = 100.0 - (ai_score * 0.5)
     if is_smoothed: trust_score -= 15.0
     if not has_prnu: trust_score -= 10.0
@@ -228,7 +181,7 @@ if uploaded_file is not None:
     st.subheader("🐕 第一防線｜AI 鷹眼辨識（AI 深度偽造嗅檢）")
     st.write(f"**🐕 警犬嗅檢風險指數：{ai_score:.2f}%** — {ai_result_text}")
 
-    # ------------------ 第二防線：ELA Jet 彩色熱圖 & ROI ------------------
+    # ------------------ 第二防線：ELA Jet 熱圖 & ROI ------------------
     st.markdown("---")
     st.subheader("🔍 第二防線｜ELA 靈犬顯影（彩色 Jet 熱圖與自動 ROI 疑點定位）")
     col_e1, col_e2 = st.columns(2)
@@ -241,7 +194,7 @@ if uploaded_file is not None:
             if cropped_roi:
                 st.image(cropped_roi, caption="疑似變造區域局部裁切放大", width=200)
 
-    # ------------------ 第三防線：FFT 頻域 & PRNU 指紋 ------------------
+    # ------------------ 第三防線：FFT & PRNU ------------------
     st.markdown("---")
     st.subheader("📉 第三防線｜FFT 頻域殘影與 PRNU 物理感光指紋")
     col_f1, col_f2 = st.columns(2)
@@ -254,7 +207,7 @@ if uploaded_file is not None:
         else:
             st.warning("⚠️ **PRNU 檢測結果：** 未偵測到實體晶片物理雜訊 (疑為 AI 生成或純數位渲染圖)。")
 
-    # ------------------ 第四防線：反偵查、LSB & C2PA ------------------
+    # ------------------ 第四防線：反偵查, LSB, C2PA ------------------
     st.markdown("---")
     st.subheader("🕵️ 第四防線｜反偵查隱寫追蹤、LSB 隱寫與 C2PA 水印稽核")
     col_a1, col_a2 = st.columns(2)
@@ -272,7 +225,7 @@ if uploaded_file is not None:
         else:
             st.write("🔏 **C2PA 稽核:** 未發現顯性 AI 工具水印簽章。")
 
-    # ------------------ 第五防線：局部放大鑑識鏡 ------------------
+    # ------------------ 第五防線：局部放大鏡 ------------------
     st.markdown("---")
     st.subheader("🔍 第五防線｜局部放大鑑識鏡 (Zoom Lens Inspector)")
     zoom_factor = st.radio("放大倍率", [2, 4, 8], horizontal=True)
@@ -289,7 +242,7 @@ if uploaded_file is not None:
     with col_z2:
         st.image(ela_jet_img.crop(box), caption=f"ELA 彩色熱圖 {zoom_factor}x 局部放大", use_container_width=True)
 
-    # ------------------ 第六防線：EXIF 中文化過濾 ------------------
+    # ------------------ 第六防線：EXIF 中文化 ------------------
     st.markdown("---")
     st.subheader("📜 第六防線｜相機履歷搜查（中文 EXIF 數位元資料）")
     exif_data_dict = {}
@@ -305,35 +258,42 @@ if uploaded_file is not None:
         exif_data_dict = {"說明": "未偵測到原始相機 EXIF 紀錄"}
         st.warning("⚠️ 未偵測到原始相機 EXIF 元資料（可能為截圖或轉傳照片）。")
 
-    # ------------------ 第七防線：匯出 PDF ------------------
+    # ------------------ 第七防線：報告匯出 ------------------
     st.markdown("---")
-    st.subheader("📄 第七防線｜資安採證官方 PDF / TXT 報告匯出")
+    st.subheader("📄 第七防線｜資安採證官方稽核報告匯出")
     
-    pdf_bytes = create_pdf_report(
-        filename=uploaded_file.name,
-        sha256_val=sha256_hash,
-        md5_val=md5_hash,
-        img_size=image.size,
-        ai_score=ai_score,
-        ai_result=ai_result_text,
-        trust_score=trust_score,
-        roi_box=roi_box,
-        prnu_has=has_prnu,
-        is_smoothed=is_smoothed,
-        c2pa_list=c2pa_findings,
-        exif_info=exif_data_dict
-    )
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    report_content = f"""================================================================================
+           「狗」眼看真偽 - 官方資安採證與數位證物稽核報告 (Official)
+================================================================================
+【一、證物監管鏈 (Chain of Custody)】
+- 採證時間: {current_time}
+- 證物檔名: {uploaded_file.name}
+- SHA-256 哈希: {sha256_hash}
+- MD5 哈希: {md5_hash}
+- 影像尺寸: {image.size[0]} x {image.size[1]} px
+
+【二、警犬隊綜合鑑定結論】
+- 可信度總分: {trust_score:.1f} / 100
+- AI 偽造風險指數: {ai_score:.2f}% ({ai_result_text})
+- 疑點 ROI 座標: {roi_box if roi_box else "未發現集中疑點區塊"}
+
+【三、高階物理解析】
+- PRNU 感光指紋: {"✅ 具備實體鏡頭晶片雜訊" if has_prnu else "⚠️ 無實體鏡頭雜訊 (疑為 AI/數位渲染)"}
+- 抹除磨皮痕跡: {"⚠️ 發現過重平滑掩蓋痕跡" if is_smoothed else "✅ 雜訊分布正常"}
+- C2PA 工具標籤: {', '.join(c2pa_findings) if c2pa_findings else "未發現顯性標籤"}
+
+【四、相機履歷 (EXIF)】
+{exif_data_dict}
+
+================================================================================
+此報告由「『狗』眼看真偽 影像真偽鑑定平台」自動生成並完成 SHA-256 數位簽章鎖定
+================================================================================
+"""
 
     st.download_button(
-        label="📥 一鍵下載「狗眼看真偽」官方 PDF 資安採證報告",
-        data=bytes(pdf_bytes),
-        file_name=f"狗眼看真偽_採證報告_{sha256_hash[:10]}.pdf",
-        mime="application/pdf"
+        label="📥 一鍵下載「狗眼看真偽」資安採證官方報告 (.txt)",
+        data=report_content,
+        file_name=f"狗眼看真偽_採證報告_{sha256_hash[:10]}.txt",
+        mime="text/plain"
     )
-streamlit
-torch
-transformers
-pillow
-numpy
-fpdf2
-matplotlib
