@@ -236,7 +236,7 @@ IGNORE_TAGS = [
     "GPSInfo",
     "YCbCrPositioning",
     "ExifVersion",
-    "ComponentsConfiguration",,
+    "ComponentsConfiguration",
     "FlashPixVersion",
     "SceneCaptureType",
 ]
