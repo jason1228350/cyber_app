@@ -330,3 +330,10 @@ if uploaded_file is not None:
         file_name=f"狗眼看真偽_採證報告_{sha256_hash[:10]}.pdf",
         mime="application/pdf"
     )
+streamlit
+torch
+transformers
+pillow
+numpy
+fpdf2
+matplotlib
