@@ -264,7 +264,7 @@ IGNORE_TAGS = [
 ]
 
 # -----------------------------------------------------------------------------
-# 5. 控制台側邊欄
+# 5. 控制台側邊欄 (Demo 圖片讀取邏輯)
 # -----------------------------------------------------------------------------
 st.sidebar.title("🐶 警犬隊控制台")
 sensitivity = st.sidebar.slider("警犬嗅覺靈敏度門檻 (%)", 30, 90, 60)
@@ -290,12 +290,18 @@ with tab1:
     bytes_data = None
     if uploaded_file is not None:
         bytes_data = uploaded_file.read()
-    elif demo_choice != "無 (自行上傳)":
-        # 範例動態產生預載圖片，方便現場測試
-        dummy_img = Image.new("RGB", (400, 400), color=(73, 109, 137))
-        buf = io.BytesIO()
-        dummy_img.save(buf, format="JPEG")
-        bytes_data = buf.getvalue()
+    elif demo_choice == "範例：真實照片":
+        try:
+            with open("real.jpg", "rb") as f:
+                bytes_data = f.read()
+        except FileNotFoundError:
+            st.error("⚠️ 找不到 real.jpg，請確認照片已存放在專案資料夾中！")
+    elif demo_choice == "範例：AI 偽造圖片":
+        try:
+            with open("fake.jpg", "rb") as f:
+                bytes_data = f.read()
+        except FileNotFoundError:
+            st.error("⚠️ 找不到 fake.jpg，請確認照片已存放在專案資料夾中！")
 
     if bytes_data is not None:
         image = Image.open(io.BytesIO(bytes_data))
@@ -306,7 +312,7 @@ with tab1:
         st.info(
             f"🐾 **證物數位指紋 (Chain of Custody):**\n- **SHA-256:** `{sha256_hash}`\n- **MD5:** `{md5_hash}`"
         )
-        st.image(image, caption="📷 待鑑定原始照片", width=500)
+        st.image(image, caption="📷 待鑑定照片", width=500)
 
         # 執行掃描與演算法
         with st.spinner("🔍 六大防線同步運算中..."):
