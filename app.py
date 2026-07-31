@@ -8,6 +8,7 @@ from PIL import ExifTags, Image, ImageChops, ImageDraw, ImageEnhance, ImageFilte
 import streamlit as st
 import torch
 from transformers import pipeline
+from fpdf import FPDF
 
 # -----------------------------------------------------------------------------
 # 1. 頁面配置與進階深色 CSS 主題 (鑑識儀表板質感)
@@ -18,7 +19,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# 注入自訂 CSS，擺脫原生模板感
+# 注入自訂 CSS，擺脫 Streamlit 原生預設風格
 st.markdown(
     """
     <style>
@@ -52,7 +53,7 @@ st.success("✅ 全防線資安警犬鑑識與主動防禦引擎已成功啟動�
 
 
 # -----------------------------------------------------------------------------
-# 2. 載入 AI 模型 (帶快取)
+# 2. 載入 AI 模型 (帶快取機制)
 # -----------------------------------------------------------------------------
 @st.cache_resource
 def load_ai_model():
@@ -68,12 +69,12 @@ classifier = load_ai_model()
 
 
 # -----------------------------------------------------------------------------
-# 3. 主動式對抗疫苗 (升級為頻域/相位高階擾動)
+# 3. 主動式對抗疫苗 (高階頻域擾動)
 # -----------------------------------------------------------------------------
 def apply_ai_vaccine(image, intensity=0.03):
     img_array = np.array(image, dtype=np.float32)
 
-    # 1. 產生高頻頻域脈衝對抗雜訊 (模擬高階對抗樣本)
+    # 產生高頻頻域脈衝對抗雜訊
     h, w, c = img_array.shape
     noise = np.random.normal(0, intensity * 255, (h, w, c))
 
@@ -89,7 +90,7 @@ def apply_ai_vaccine(image, intensity=0.03):
 
 
 # -----------------------------------------------------------------------------
-# 4. 核心鑑識演算法 (修復與精簡版)
+# 4. 核心鑑識演算法
 # -----------------------------------------------------------------------------
 def generate_ela_jet(image, quality=90):
     image_rgb = image.convert("RGB")
@@ -106,7 +107,7 @@ def generate_ela_jet(image, quality=90):
 
     gray_array = np.array(ela_im.convert("L")) / 255.0
 
-    # 使用現代 Matplotlib Colormap API (簡化相容性代碼)
+    # 使用現代 Matplotlib Colormap API
     jet_colormap = matplotlib.colormaps["jet"]
     jet_mapped = (jet_colormap(gray_array)[:, :, :3] * 255).astype(np.uint8)
 
@@ -170,7 +171,6 @@ def analyze_anti_forensics(image):
 
 
 def scan_c2pa_watermark(file_bytes):
-    # 優化標籤偵測邏輯
     bytes_str = str(file_bytes[:15000]) + str(file_bytes[-15000:])
     keywords = [
         "C2PA",
@@ -219,6 +219,28 @@ def generate_copilot_narrative(
     return "\n\n".join(narrative)
 
 
+# PDF 類別封裝
+class ForensicPDF(FPDF):
+    def header(self):
+        self.set_font("Helvetica", "B", 14)
+        self.cell(
+            0,
+            10,
+            "Forensic Audit & Chain of Custody Report",
+            border=False,
+            ln=True,
+            align="C",
+        )
+        self.ln(5)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Helvetica", "I", 8)
+        self.cell(
+            0, 10, f"Page {self.page_no()}", border=False, ln=False, align="C"
+        )
+
+
 EXIF_ZH_MAP = {
     "Make": "拍攝裝置品牌",
     "Model": "拍攝裝置型號",
@@ -242,7 +264,7 @@ IGNORE_TAGS = [
 ]
 
 # -----------------------------------------------------------------------------
-# 5. 控制台側邊欄 (新增 Demo 一鍵載入功能)
+# 5. 控制台側邊欄
 # -----------------------------------------------------------------------------
 st.sidebar.title("🐶 警犬隊控制台")
 sensitivity = st.sidebar.slider("警犬嗅覺靈敏度門檻 (%)", 30, 90, 60)
@@ -269,7 +291,7 @@ with tab1:
     if uploaded_file is not None:
         bytes_data = uploaded_file.read()
     elif demo_choice != "無 (自行上傳)":
-        # Demo 預載機制 (可替換為實際圖片 Bytes)
+        # 範例動態產生預載圖片，方便現場測試
         dummy_img = Image.new("RGB", (400, 400), color=(73, 109, 137))
         buf = io.BytesIO()
         dummy_img.save(buf, format="JPEG")
@@ -457,35 +479,54 @@ with tab1:
             exif_data_dict = {"說明": "未偵測到原始相機 EXIF 紀錄"}
             st.warning("⚠️ 未偵測到原始相機 EXIF 元資料（可能為截圖或轉傳照片）。")
 
-        # ------------------ 第六防線報告下載 ------------------
+        # ------------------ 第六防線：PDF 採證報告匯出 ------------------
         st.markdown("---")
         st.subheader("📄 第六防線｜資安採證官方稽核報告匯出")
+
+        pdf = ForensicPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=10)
+
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        report_content = f"""================================================================================
-           「狗」眼看真偽 - 官方資安採證與數位證物稽核報告 (Official)
-================================================================================
-【一、證物監管鏈 (Chain of Custody)】
-- 採證時間: {current_time}
-- SHA-256 哈希: {sha256_hash}
-- MD5 哈希: {md5_hash}
 
-【二、警犬 Copilot 白話鑑定結論】
-{copilot_text}
+        pdf.cell(0, 8, f"Timestamp: {current_time}", ln=True)
+        pdf.cell(0, 8, f"SHA-256 Hash: {sha256_hash}", ln=True)
+        pdf.cell(0, 8, f"MD5 Hash: {md5_hash}", ln=True)
+        pdf.ln(5)
 
-【三、高階物理解析】
-- 可信度總分: {trust_score:.1f} / 100
-- PRNU 感光指紋: {"✅ 具備實體鏡頭晶片雜訊" if has_prnu else "⚠️ 無實體鏡頭雜訊 (疑為 AI/數位渲染)"}
-- 疑點 ROI 座標: {roi_box if roi_box else "未發現集中疑點區塊"}
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, "Assessment Results:", ln=True)
+        pdf.set_font("Helvetica", size=10)
+        pdf.cell(0, 8, f"- Trust Score: {trust_score:.1f} / 100", ln=True)
+        pdf.cell(0, 8, f"- AI Fake Risk: {ai_score:.2f}%", ln=True)
+        pdf.cell(
+            0,
+            8,
+            f"- PRNU Sensor Noise: {'Detected' if has_prnu else 'Missing/Artificial'}",
+            ln=True,
+        )
+        pdf.cell(
+            0,
+            8,
+            f"- Anti-Forensics Smooth: {'Detected' if is_smoothed else 'Normal'}",
+            ln=True,
+        )
 
-【四、相機履歷 (EXIF)】
-{exif_data_dict}
-================================================================================
-"""
+        if roi_box:
+            pdf.cell(
+                0,
+                8,
+                f"- Anomaly ROI Box (X,Y,W,H): {roi_box}",
+                ln=True,
+            )
+
+        pdf_bytes = pdf.output()
+
         st.download_button(
-            label="📥 一鍵下載「狗眼看真偽」資安採證官方報告 (.txt)",
-            data=report_content,
-            file_name=f"狗眼看真偽_採證報告_{sha256_hash[:10]}.txt",
-            mime="text/plain",
+            label="📥 一鍵下載「狗眼看真偽」資安採證官方 PDF 報告 (.pdf)",
+            data=bytes(pdf_bytes),
+            file_name=f"Forensic_Report_{sha256_hash[:10]}.pdf",
+            mime="application/pdf",
         )
 
 # -----------------------------------------------------------------------------
