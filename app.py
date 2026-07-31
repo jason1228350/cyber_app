@@ -6,7 +6,7 @@ import numpy as np
 import io
 import datetime
 import hashlib
-import matplotlib.cm as cm
+import matplotlib.pyplot as plt
 
 # 1. 頁面配置
 st.set_page_config(
@@ -32,7 +32,7 @@ except Exception as e:
 
 # 3. 核心功能模組
 
-# (1) ELA 彩色 Jet 熱圖產生器
+# (1) ELA 彩色 Jet 熱圖產生器 (修復新舊版 Matplotlib 相容性)
 def generate_ela_jet(image, quality=90):
     image_rgb = image.convert("RGB")
     buffer = io.BytesIO()
@@ -47,9 +47,15 @@ def generate_ela_jet(image, quality=90):
     ela_im = ImageEnhance.Brightness(ela_im).enhance(scale * 1.8)
     
     gray_array = np.array(ela_im.convert("L")) / 255.0
-    jet_colormap = cm.get_cmap('jet')
-    jet_mapped = (jet_colormap(gray_array)[:, :, :3] * 255).astype(np.uint8)
     
+    # 支援新舊版 matplotlib colormap 寫法
+    try:
+        jet_colormap = plt.get_cmap('jet')
+    except AttributeError:
+        import matplotlib.cm as cm
+        jet_colormap = cm.get_cmap('jet')
+        
+    jet_mapped = (jet_colormap(gray_array)[:, :, :3] * 255).astype(np.uint8)
     return Image.fromarray(jet_mapped), gray_array
 
 # (2) 自動 ROI 變造疑點標記 (Bounding Box)
