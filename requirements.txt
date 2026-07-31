@@ -1,5 +1,6 @@
 streamlit
-pillow
-transformers
 torch
-torchvision
+transformers
+pillow
+numpy
+matplotlib
